@@ -1,0 +1,289 @@
+---
+title: "Poster"
+author: "Alexander Kroll"
+date: "2022-12-10"
+output: html_document
+---
+
+```{r, echo=FALSE}
+df <- read.csv("covid.csv",stringsAsFactors=TRUE)
+```
+
+First let's import our data from the csv file and get a better idea of what our data looks like so we can start to build an idea of what to look at for predicting wine quality using these wine properties.
+
+## EDA
+
+```{r}
+suppressMessages(library(tidyverse))
+df <- df %>% slice(.,-c(27))
+colnames(df) <- c("Vaccinated/Accepted","Uninsured","Health Insurance Spending","Births","Infant Mortality","Firearms Deaths","Median Income","Governor Party","Senate Party","House Party","State Produciton","Unemployment","Monthly Snap","Smoking","Drug OD","Hospital Expenses","Population")
+summary(df)
+nrow(df)
+dim(df)
+```
+
+covid is our response variable and all other variables are predictors. Our sample size is 49 and we have 17 variables. We can see that all of our predictor variables are quantitative and with a qualitative response variable, our EDA will mainly use box plots to examine correlation of predictors and our response variable.
+
+```{r}
+suppressMessages(library(tidyverse))
+df.quan <- df %>% select(.,-`Governor Party`,-`House Party`,-`Senate Party`,-`Vaccinated/Accepted`) %>% gather(.)
+ggplot(data=df.quan,mapping=aes(x=value)) + 
+  geom_histogram(color="black",fill="dark green", bins=25) +
+  facet_wrap(~key,scales='free') +
+  xlab("Value") +
+  ylab("Count") +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))+
+  scale_y_discrete(guide = guide_axis(n.dodge=3))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+num.var <- 3
+df.qual <- df %>% select(.,`Governor Party`,`House Party`,`Senate Party`,-`Vaccinated/Accepted`) %>% gather(.)
+ggplot(data=df.qual,mapping=aes(x=value,y=rep(df$`Vaccinated/Accepted`,num.var))) +
+  xlab("Party Affiliation") +
+  ylab("Vaccinated or Accepted") +
+geom_boxplot(size=0.1,color="black",fill="dark green") +
+facet_wrap(~key,scales='free') +
+ylab("Quality") +
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+num.var <- 13
+ggplot(data=df.quan,mapping=aes(x=value,y=rep(df$`Vaccinated/Accepted`,num.var))) +
+  geom_point(size=0.1,color="black",fill="dark green") +
+  facet_wrap(~key,scales='free') +
+    xlab("Value") +
+  ylab("Vaccinated or Accepted") +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))+
+  scale_y_discrete(guide = guide_axis(n.dodge=3))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+We can see that, for several of the predictors, there are many outliers (specifically chlorides, citrus, acidity, pH, sulphates, free sulfure dioxide, and acidity). For right skewed data, we can try to transform it using a square root, cube root, or log. For the sake of consistency, we will apply the same transform to all of the aforementioned overly skewed predictors. Transforming the data does not ruin correlation predictions, it just helps reveal possible hidden trends. All that being said, let's look at which transform possibly shows a better correlation between quality and predictor variables.
+
+```{r}
+ggplot(data=df.quan,mapping=aes(x=log(value))) + 
+  geom_histogram(color="black",fill="dark green", bins=25) +
+  facet_wrap(~key,scales='free') +
+    xlab("Log(Value)") +
+  ylab("Vaccinated or Accepted") +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))+
+  scale_y_discrete(guide = guide_axis(n.dodge=3))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+
+```{r}
+df <- df %>% mutate(.,`Monthly Snap`=log(`Monthly Snap`),
+                    Births=log(Births),
+                    Population=log(Population),
+                    `State Produciton`=log(`State Produciton`),
+                    `Health Insurance Spending`=log(`Health Insurance Spending`),
+                    Unemployment=log(Unemployment))
+
+df <- df %>% filter(.,`Vaccinated/Accepted`>77)
+
+df.quan <- df %>% select(.,-`Governor Party`,-`House Party`,-`Senate Party`,-`Vaccinated/Accepted`) %>% gather(.)
+
+df.qual <- df %>% select(.,`Governor Party`,`House Party`,`Senate Party`,-`Vaccinated/Accepted`) %>% gather(.)
+```
+
+```{r}
+ggplot(data=df.quan,mapping=aes(x=value)) + 
+  geom_histogram(color="black",fill="dark green", bins=25) +
+  facet_wrap(~key,scales='free') +
+  xlab("Value") +
+  ylab("Count") +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))+
+  scale_y_discrete(guide = guide_axis(n.dodge=3))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+num.var <- 3
+ggplot(data=df.qual,mapping=aes(x=value,y=rep(df$`Vaccinated/Accepted`,num.var))) +
+geom_boxplot(size=0.1,color="black",fill="dark green") +
+facet_wrap(~key,scales='free') +
+  xlab("Party Affiliation") +
+  ylab("Vaccinated or Accepted") +
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+```{r}
+num.var <- 13
+ggplot(data=df.quan,mapping=aes(x=value,y=rep(df$`Vaccinated/Accepted`,num.var))) +
+  geom_point(size=0.7,color="dark green",fill="dark green") +
+  facet_wrap(~key,scales='free') +
+  xlab("Value") +
+  ylab("Vaccinated or Accepted") +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))+
+  scale_y_discrete(guide = guide_axis(n.dodge=3))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+``` 
+
+```{r}
+suppressMessages(library(car))
+suppressMessages(library(corrplot))
+df.quan2 <- df %>% select(.,-`Governor Party`,-`House Party`,-`Senate Party`)
+# corrplot(cor(df.quan2),method = "ellipse",tl.cex = 0.5) 
+corrplot.mixed(cor(df.quan2),upper="number",lower="color",tl.pos='lt',diag='l',tl.cex = 0.5)
+```
+
+```{r}
+```
+```{r}
+summary(df)
+```
+## Linear Regression
+```{R}
+colnames(df) <- c("Vaccinated.Accepted","Uninsured","Health.Insurance.Spending","Births","Infant.Mortality","Firearms.Deaths","Median.Income","Governor.Party","Senate.Party","House.Party","State.Produciton","Unemployment","Monthly.Snap","Smoking","Drug.OD","Hospital.Expenses","Population")
+predictors <- df %>% dplyr::select(.,-`Vaccinated.Accepted`)
+response <- df %>% dplyr::select(.,`Vaccinated.Accepted`)
+
+# Train-test split
+set.seed(1212)
+r_index <- sample(c(TRUE,FALSE), nrow(predictors),replace=TRUE,prob=c(0.7,0.3))
+pred.train <- predictors[r_index,]
+pred.test <- predictors[!r_index,]
+resp.train <- response[r_index,]
+resp.test <- response[!r_index,]
+```
+
+```{R}
+# Perform regression
+lm.out <- lm(resp.train~.,data=pred.train)
+summary(lm.out)
+```
+Adjusted R-squared = 0.853. This implies a good fit to the data.
+
+```{r}
+vaccinated.pred <- predict(lm.out,newdata=pred.test)
+plt <- ggplot(mapping=aes(x=resp.test,y=vaccinated.pred)) + geom_point(color="dark green",size=0.8)
+plt + geom_abline(color='black') + ylab("Predicted vaccinated") + xlab("Observed vaccinated")
+```
+```{r}
+
+vaccinated.pred <- predict(lm.out,newdata=pred.test)
+residual <- resp.test - vaccinated.pred
+ggplot(mapping=aes(x=residual)) + geom_histogram(color="black",fill="dark green",bins=5)
+```
+```{R}
+MSE <- mean((resp.test - vaccinated.pred)^2)
+MSE
+```
+## Best Model Selection
+
+```{R}
+suppressMessages(library(bestglm))
+out.bg.aic <- bestglm(pred.train,family=gaussian,IC="AIC")
+out.bg.aic$BestModel
+```
+```{r}
+out.bg.bic <- bestglm(pred.train,family=gaussian,IC="BIC")
+out.bg.bic$BestModel
+```
+```{R}
+bic.out <- summary(out.bg.bic$BestModel)
+bic.mse <- bic.out$r.squared
+bic.mse
+aic.out <- summary(out.bg.aic$BestModel)
+aic.mse <- aic.out$r.squared
+aic.mse
+# lm.out.mse = 0.7783
+```
+```{r}
+pred.train.selected <- pred.train %>% dplyr::select(.,Health.Insurance.Spending,Births,Infant.Mortality,State.Produciton,Monthly.Snap) 
+pred.test.selected <- pred.test %>% dplyr::select(.,Health.Insurance.Spending,Births,Infant.Mortality,State.Produciton,Monthly.Snap)
+lm.bic <- lm(resp.train~.,data=pred.train.selected)
+vaccinated.pred <- predict(lm.bic,newdata=pred.test.selected)
+MSE <- mean((resp.test - vaccinated.pred)^2)
+MSE # MSE = 9.183 
+```
+## Random Forest Analysis
+
+```{r}
+suppressMessages(library(randomForest))
+
+set.seed(1212)
+
+traindf <- data.frame(resp.train, pred.train)
+testdf <- data.frame(resp.test, pred.test)
+
+randomforestmodel <- randomForest(resp.train~.,data=traindf,importance=TRUE)
+```
+
+```{r}
+testdf = subset(testdf, select = -c(resp.test))
+  
+rf_vaccinated_pred <- predict(randomforestmodel,newdata = testdf)
+
+rf_mse <- mean((resp.test - rf_vaccinated_pred )^2)
+rf_mse
+#mse = 5.54
+```
+
+```{r}
+varImpPlot(randomforestmodel,type=1)
+```
+```{r}
+rfscatterplotdf = data.frame(resp.test, rf_vaccinated_pred)
+
+ggplot(mapping=aes(x=resp.test,y=rf_vaccinated_pred), data = rfscatterplotdf) + geom_point(color="dark green",size=0.8) + xlab("Observed Vaccinated") + ylab("Predicted Vaccinated") +
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + geom_abline(color="black")
+```
+
+
+## KNN
+```{r}
+# FILL ME IN
+suppressMessages(library(FNN))
+```
+
+```{R}
+predictors <- df %>% dplyr::select(.,-`Vaccinated.Accepted`,-`Governor.Party`,-`Senate.Party`,-`House.Party`)
+response <- df %>% dplyr::select(.,`Vaccinated.Accepted`)
+
+# Train-test split
+set.seed(1212)
+r_index <- sample(c(TRUE,FALSE), nrow(predictors),replace=TRUE,prob=c(0.7,0.3))
+pred.train <- predictors[r_index,]
+pred.test <- predictors[!r_index,]
+resp.train <- response[r_index,]
+resp.test <- response[!r_index,]
+```
+
+```{r}
+k.max = 30
+mse.k = rep(NA,k.max)
+for ( kk in 1:k.max ) {
+  knn.out = knn.reg(train=pred.train,y=resp.train,k=kk,algorithm="brute")
+  mse.k[kk] = mean((knn.out$pred - resp.train)^2)
+}
+k.min = which.min(mse.k)
+cat("optimal number of nearest neighbours :",k.min)
+```
+
+```{R}
+ggplot(data.frame("k"=1:k.max,'mse'=mse.k),mapping=aes(x=k,y=mse)) +
+  geom_point() + geom_line() +
+  xlab('No.of Nearest Neighbors k') + ylab('Validation MSE') +
+  geom_vline(xintercept=k.min,color='red')
+```
+
+```{R}
+knn.out = knn.reg(train=pred.train,test=pred.test,y=resp.train,k=k.min,algorithm="brute")
+(knn.mse = mean((knn.out$pred-resp.test)^2))
+# mse = 10.459
+```
+
+```{R}
+ggplot(data=data.frame("x"=resp.test,"y"=knn.out$pred),mapping=aes(x=x,y=y)) +
+geom_point(size=1,color="dark green") +
+
+xlab("Observed Test-Set Response") + ylab("Predicted Test-Set Response") +
+geom_abline(intercept=0,slope=1,color="black")
+```
+
+
